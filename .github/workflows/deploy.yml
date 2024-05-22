@@ -1,0 +1,126 @@
+# # Deploy to aws
+# name: Deploy to AWS
+
+# # Controls when the action will run.
+# on:
+#   workflow_dispatch:
+#   push:
+#     branches: [main]
+
+# env:
+#   SERVER_IP: 3.0.240.151
+#   USERNAME: ubuntu
+#   AWS_DEFAULT_REGION: "ap-southeast-1"
+#   AWS_BUCKET: "foi-base"
+
+#   NUXT_PUBLIC_SITE_URL: "https://fiverroutsourcinginstitute.com"
+#   NUXT_PUBLIC_APP_NAME: "Fiverr Outsourcing Institute"
+#   NUXT_PUBLIC_CDN_URL: "https://cdn.fiverroutsourcinginstitute.com/static"
+#   NUXT_PUBLIC_API_URL: "https://api.fiverroutsourcinginstitute.com/api"
+#   NUXT_PUBLIC_WORKFLOW: "live"
+#   NUXT_PUBLIC_RECAPTCHA_SITE_KEY: "6Le0HgwpAAAAANKwuaIaH43Wry42kxud-i3WVQvW"
+#   NUXT_PUBLIC_PUSHER_APP_KEY: "bol8GI3GS3WtQNjsHm0GUF01Hab"
+#   NUXT_PUBLIC_PUSHER_HOST: "socket.fiverroutsourcinginstitute.com"
+#   NUXT_PUBLIC_PUSHER_PORT: 443
+
+# # A workflow run is made up of one or more jobs that can run sequentially or in parallel
+# jobs:
+#   build:
+#     runs-on: ubuntu-latest
+
+#     # Steps represent a sequence of tasks that will be executed as part of the job
+#     steps:
+#       - name: Checkout 🛎
+#         uses: actions/checkout@v3
+
+#       - name: Setup node env 🏗
+#         uses: actions/setup-node@v3
+#         with:
+#           node-version: 18
+#           check-latest: true
+
+#       - name: Get yarn cache directory path
+#         id: yarn-cache-dir-path
+#         run: echo "dir=$(yarn cache dir)" >> $GITHUB_OUTPUT
+
+#       - uses: actions/cache@v3
+#         id: yarn-cache # use this to check for `cache-hit` (`steps.yarn-cache.outputs.cache-hit != 'true'`)
+#         with:
+#           path: ${{ steps.yarn-cache-dir-path.outputs.dir }}
+#           key: ${{ runner.os }}-yarn-${{ hashFiles('**/yarn.lock') }}
+#           restore-keys: |
+#             ${{ runner.os }}-yarn-
+
+#       - name: Install dependencies 👨🏻‍💻
+#         run: yarn install --prefer-offline --frozen-lockfile --non-interactive --production=false
+
+#       - name: Make envfile
+#         uses: SpicyPizza/create-envfile@v1.3
+#         with:
+#           envkey_GIT_COMMIT_SHA: ${{ github.sha }}
+#           envkey_NUXT_PUBLIC_SITE_URL: ${{ env.NUXT_PUBLIC_SITE_URL }}
+#           envkey_NUXT_PUBLIC_APP_NAME: "${{ env.NUXT_PUBLIC_APP_NAME }}"
+#           envkey_NUXT_PUBLIC_CDN_URL: ${{ env.NUXT_PUBLIC_CDN_URL }}
+#           envkey_NUXT_APP_CDN_URL: ${{ env.NUXT_PUBLIC_CDN_URL }}
+#           envkey_NUXT_PUBLIC_WORKFLOW: ${{ env.NUXT_PUBLIC_WORKFLOW }}
+#           envkey_NUXT_PUBLIC_RECAPTCHA_SITE_KEY: ${{ env.NUXT_PUBLIC_RECAPTCHA_SITE_KEY }}
+#           envkey_NUXT_PUBLIC_PUSHER_APP_KEY: ${{ env.NUXT_PUBLIC_PUSHER_APP_KEY }}
+#           envkey_NUXT_PUBLIC_PUSHER_HOST: ${{ env.NUXT_PUBLIC_PUSHER_HOST }}
+#           envkey_NUXT_PUBLIC_PUSHER_PORT: ${{ env.NUXT_PUBLIC_PUSHER_PORT }}
+
+#       - name: Run builder
+#         run: yarn build
+
+#       - name: Archive necessary folders and files
+#         uses: montudor/action-zip@v1
+#         with:
+#           args: zip -r dist.zip .output/server .env ecosystem.config.js
+
+#       # Configure AWS credential and region environment variables for use with the AWS CLI and AWS SDKs
+#       - name: Configure AWS credentials
+#         uses: aws-actions/configure-aws-credentials@v2
+#         with:
+#           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+#           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+#           aws-region: ${{ env.AWS_DEFAULT_REGION }}
+
+#       - name: Upload to Amazon S3
+#         run: aws s3 sync --delete .output/public s3://${{ env.AWS_BUCKET }}/static/ --cache-control max-age=31536000
+
+#       - name: Install SSH key
+#         uses: shimataro/ssh-key-action@v2
+#         with:
+#           key: ${{ secrets.SSH_KEY }}
+#           known_hosts: ${{ env.SERVER_IP }}
+
+#       - name: Adding Known hosts
+#         run: ssh-keyscan -H ${{ env.SERVER_IP }} >> ~/.ssh/known_hosts
+
+#       - name: Rsync over ssh
+#         run: rsync -avz dist.zip ${{ env.USERNAME }}@${{ env.SERVER_IP }}:/home/${{ env.USERNAME }}
+
+#       - name: Executing remote ssh commands using ssh key
+#         uses: appleboy/ssh-action@master
+#         env:
+#           SHA: ${{ github.sha }}
+#           USERNAME: ${{ env.USERNAME }}
+#           APP_NAME: fiverroutsourcinginstitute
+#         with:
+#           host: ${{ env.SERVER_IP }}
+#           username: ${{ env.USERNAME }}
+#           key: ${{ secrets.SSH_KEY }}
+#           envs: USERNAME,APP_NAME
+#           script: |
+#             export PATH="/home/ubuntu/.local/share/fnm:$PATH"
+#             eval "$(fnm env --use-on-cd)"
+#             source ~/.bashrc
+#             rm -rf app
+#             mkdir app
+#             mv dist.zip app
+#             cd app
+#             unzip dist.zip
+#             if pm2 show foi; then
+#               pm2 restart foi
+#             else
+#               pm2 start --name foi
+#             fi
